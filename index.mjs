@@ -1,8 +1,11 @@
 import * as Discord from "discord.js";
 import * as dotenv from "dotenv";
+import { thresholdChange } from "./commands/config/threshold";
 import { QuickDB } from "quick.db";
 import { scan } from "reminate";
 import axios from "axios";
+import { exceptionChange } from "./commands/config/exception";
+import { logChange } from "./commands/config/logchan";
 
 dotenv.config();
 
@@ -15,7 +18,14 @@ const procenv = process.env,
 
 client.on("guildCreate", async (guild) => {
   if (!(await db.has(guild.id))) {
-    const logChannel = await guild.channels.create({ name: "isai-logs" });
+    const channels = await guild.channels.fetch(),
+      logChannel = channels.some((c) => {
+        c.name == "isai-logs";
+      })
+        ? channels.find((c) => {
+            c.name == "isai-logs";
+          })
+        : await guild.channels.create({ name: "isai-logs" });
     await db.set(guild.id, {
       obj: guild,
       config: { threshold: 80, exception: "unset", log: logChannel.id },
@@ -52,9 +62,9 @@ client.on("messageCreate", async (message) => {
           .setThumbnail(a[1].url)
           .setTimestamp()
           .setFooter(
-            `- Message ID: ${message.id} - Posted <t:${
-              Date.now() - message.createdTimestamp
-            }:R> ago.`
+            `Message ID: ${message.id}` +
+              `\nPosted <t:${Date.now() - message.createdTimestamp}:R> ago.` +
+              `\n<a:AU_AU:772657347956441098> Join Art Union, https://discord.gg/bqcsVNF`
           );
 
       if (prob >= guildConfig.config.threshold)
@@ -97,137 +107,28 @@ client.on("interactionCreate", async (interaction) => {
                   s[0] == "log"
                     ? `<#${JSON.stringify(s[1])}>`
                     : JSON.stringify(s[1]),
+                inline: true,
               };
             })
           )
-          .setTimestamp();
+          .setTimestamp()
+          .setFooter({
+            text: `<a:AU_AU:772657347956441098> Join Art Union, https://discord.gg/bqcsVNF`,
+          });
+        await interaction.reply({ embeds: [embed] });
       }
 
       switch (op) {
         case "threshold":
-          if (!newval)
-            await interaction.reply({
-              content: `Current threshold for ${interaction.guild.name} is: **${guildConf.config.threshold}%**`,
-              ephemeral: true,
-            });
-          else {
-            if (isNaN(newval)) {
-              await interaction.reply({
-                content: `Invalid new threshold!\nThreshold must be a number between 0-100.`,
-                ephemeral: true,
-              });
-              return;
-            }
-
-            if (newval > 100 || newval < 0) {
-              await interaction.reply({
-                content: `Invalid new threshold!\nThreshold must be a number between 0-100.`,
-                ephemeral: true,
-              });
-              return;
-            }
-
-            await interaction.deferReply();
-            try {
-              let newConf = { ...guildConf };
-              newConf["config"]["threshold"] = newval;
-              await db.set(interaction.guildId, newConf);
-              await interaction.editReply(
-                `Changed threshold for ${interaction.guild.name} to **${newval}%**`
-              );
-              await logChannel.send(
-                `${interaction.user.tag}(${interaction.user.id}) changed the threshold for this server to ${newval}%`
-              );
-            } catch (error) {
-              logger(
-                `Failed to change threshold for ${interaction.guild.name}(${interaction.guildId}), ${error}`
-              );
-              await interaction.editReply(
-                `An error occurred while changing the threshold for **${interaction.guild.name}**!\n` +
-                  `Try again, please contact support if this persists.`
-              );
-            }
-          }
+          await thresholdChange(guildConf, newval, interaction, db, logChannel);
           break;
 
         case "exception":
-          if (!newval) {
-            await interaction.reply({
-              content: `Current exception for ${interaction.guild.name} is: **${guildConf.config.exception}%**`,
-              ephemeral: true,
-            });
-            return;
-          } else {
-            let newrole = await interaction.guild.roles.fetch(newval);
-            if (isNaN(newval) || !newrole) {
-              await interaction.reply({
-                content: `Invalid new exception role!\nValue must be a valid role ID.`,
-                ephemeral: true,
-              });
-              return;
-            }
-
-            await interaction.deferReply();
-            try {
-              let newConf = { ...guildConf };
-              newConf["config"]["exception"] = newval;
-              await db.set(interaction.guildId, newConf);
-              await interaction.editReply(
-                `Changed exception for ${interaction.guild.name} to **${newrole.name}(${newval})**`
-              );
-              await logChannel.send(
-                `${interaction.user.tag}(${interaction.user.id}) changed the exception for this server to ${newrole.name}(${newval})`
-              );
-            } catch (error) {
-              logger(
-                `Failed to change exception for ${interaction.guild.name}(${interaction.guildId}), ${error}`
-              );
-              await interaction.editReply(
-                `An error occurred while changing the exception for **${interaction.guild.name}**!\n` +
-                  `Try again, please contact support if this persists.`
-              );
-            }
-          }
+          await exceptionChange(guildConf, newval, interaction, db, logChannel);
           break;
 
         case "log":
-          if (!newval) {
-            await interaction.reply({
-              content: `Current log channel for ${interaction.guild.name} is: <#${logChannel.id}>(${logChannel.id})`,
-              ephemeral: true,
-            });
-            return;
-          } else {
-            let newchannel = await interaction.guild.channels.fetch(newval);
-            if (isNaN(newval) || !newchannel) {
-              await interaction.reply({
-                content: `Invalid new log channel!\nValue must be a valid channel ID.`,
-                ephemeral: true,
-              });
-              return;
-            }
-
-            await interaction.deferReply();
-            try {
-              let newConf = { ...guildConf };
-              newConf["config"]["log"] = newval;
-              await db.set(interaction.guildId, newConf);
-              await interaction.editReply(
-                `Changed log channel for ${interaction.guild.name} to <#${logChannel.id}>(${logChannel.id})`
-              );
-              await logChannel.send(
-                `${interaction.user.tag}(${interaction.user.id}) changed the exception for this server to ${newrole.name}(${newval})`
-              );
-            } catch (error) {
-              logger(
-                `Failed to change log channel for ${interaction.guild.name}(${interaction.guildId}), ${error}`
-              );
-              await interaction.editReply(
-                `An error occurred while changing the exception for **${interaction.guild.name}**!\n` +
-                  `Try again, please contact support if this persists.`
-              );
-            }
-          }
+          await logChange(guildConf, newval, interaction, db, logChannel);
           break;
 
         default:
@@ -237,6 +138,45 @@ client.on("interactionCreate", async (interaction) => {
           });
           break;
       }
+      break;
+
+    case "support":
+      let embed = new Discord.EmbedBuilder()
+        .setTitle("💬 Isai Support")
+        .setDescription(`FAQ:`)
+        .setFields([
+          {
+            name: "How does this bot work?",
+            value:
+              `Our bot interfaces with [**Illuminarty**](https://illuminarty.ai) to determine if an artwork is AI-generated.\n` +
+              `(To clarify, we are **not** an official bot from Illuminarty, we are simply interfacing with their service)`,
+            inline: true,
+          },
+          {
+            name: "Are my images stored in a database?",
+            value:
+              `We do **not** store any of the materials we process for any longer than the duration __necessary__ to process them.\n` +
+              `However, as we interface with [**Illuminarty**](https://illuminarty.ai) to process works, ` +
+              `we suggest you check their [privacy policy](https://illuminarty.ai/privacy).`,
+            inline: true,
+          },
+          {
+            name: "Is this bot open-source? Can I contribute?",
+            value:
+              `Yes! Here's the [source code](https://github.com/spuuntries/isai).\n` +
+              `Contributions are welcome! 🤗`,
+            inline: true,
+          },
+          {
+            name: "Is there a support server?",
+            value:
+              `Here: []().\n` + // TODO: Add link, make server
+              `The bot is currently being solo-developed by kek/spuun, you can contact him at kkekkyea#4686 on Discord and kek@spuun.art.`,
+            inline: true,
+          },
+          // TODO: A longer FAQ, website on github.io mabi
+        ]);
+      interaction.reply({ embeds: [embed], ephemeral: true });
       break;
 
     default:
