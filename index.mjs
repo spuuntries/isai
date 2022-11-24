@@ -16,6 +16,10 @@ const procenv = process.env,
   db = new QuickDB(),
   logger = (message) => console.log(`[${new Date()}] | ${message}`);
 
+client.on("ready", async () => {
+  if (!(await db.has("log"))) db.set("log", {});
+});
+
 client.on("guildCreate", async (guild) => {
   if (!(await db.has(guild.id))) {
     const channels = await guild.channels.fetch(),
@@ -67,8 +71,20 @@ client.on("messageCreate", async (message) => {
               `\n<a:AU_AU:772657347956441098> Join Art Union, https://discord.gg/bqcsVNF`
           );
 
-      if (prob >= guildConfig.config.threshold)
+      if (prob >= guildConfig.config.threshold) {
         logChannel.send({ embeds: [embed] });
+        logger(
+          `Detected ${message.id} from ${message.author.id} in ${message.guild.id}`
+        );
+      }
+
+      if (!(await db.get("log"))[""])
+        await db.set(`log.${message.author.id}`, []);
+      await db.push(`log.${message.author.id}`, a[1].url);
+
+      logger(
+        `Processed ${message.id} from ${message.author.id} in ${message.guild.id}`
+      );
     });
   }
 });
