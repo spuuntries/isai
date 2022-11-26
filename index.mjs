@@ -3,6 +3,7 @@ import * as dotenv from "dotenv";
 import { thresholdChange } from "./commands/config/threshold";
 import { QuickDB } from "quick.db";
 import { scan } from "reminate";
+import zlib from "node:zlib";
 import axios from "axios";
 import { exceptionChange } from "./commands/config/exception";
 import { logChange } from "./commands/config/logchan";
@@ -78,9 +79,12 @@ client.on("messageCreate", async (message) => {
         );
       }
 
-      if (!(await db.get("log"))[""])
+      if (!(await db.get(`log.${message.author.id}`)))
         await db.set(`log.${message.author.id}`, []);
-      await db.push(`log.${message.author.id}`, a[1].url);
+      await db.push(
+        `log.${message.author.id}`,
+        zlib.brotliCompressSync(a[1].url)
+      );
 
       logger(
         `Processed ${message.id} from ${message.author.id} in ${message.guild.id}`
@@ -93,13 +97,14 @@ client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand() || interaction.channel.type == "DM")
     return;
 
+  /** @type {{obj: Discord.Guild, config: {threshold: number, exception: string, log: string}}} */
+  const guildConf = await db.get(interaction.guildId),
+    logChannel = await client.channels.fetch(guildConfig.config.log);
+
   switch (interaction.commandName) {
     case "config":
-      /** @type {{obj: Discord.Guild, config: {threshold: number, exception: string, log: string}}} */
-      const guildConf = await db.get(interaction.guildId),
-        /** @type {Discord.TextChannel} */
-        logChannel = await client.channels.fetch(guildConfig.config.log),
-        op = interaction.options.getString("option"),
+      /** @type {Discord.TextChannel} */
+      const op = interaction.options.getString("option"),
         newval = interaction.options.getString("new_value");
 
       if (!interaction.member.permissions.toArray().includes("ManageGuild"))
@@ -154,6 +159,27 @@ client.on("interactionCreate", async (interaction) => {
           });
           break;
       }
+      break;
+
+    case "log":
+      const user = interaction.options.getMember("user");
+
+      if (!user) return;
+
+      if (!interaction.member.permissions.toArray().includes("ManageMessages"))
+        await interaction.reply({
+          content:
+            "Only members with `Manage Messages` permission are allowed to use this command!",
+          ephemeral: true,
+        });
+
+      const logs = await db.get(`log.${user.id}`);
+      if (!logs)
+        await interaction.reply({
+          content: `Logs for user ${user.displayName}(${user.id}) doesn't exist! Please re-check and retry again.`,
+          ephemeral: true,
+        });
+
       break;
 
     case "support":
