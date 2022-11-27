@@ -3,8 +3,13 @@ import * as dotenv from "dotenv";
 import { thresholdChange } from "./commands/config/threshold";
 import { QuickDB } from "quick.db";
 import { scan } from "reminate";
-import zlib from "node:zlib";
 import axios from "axios";
+import {
+  brotliCompressSync,
+  brotliDecompress,
+  brotliDecompressSync,
+} from "node:zlib";
+import { Pagination } from "discordjs-button-embed-pagination";
 import { exceptionChange } from "./commands/config/exception";
 import { logChange } from "./commands/config/logchan";
 
@@ -80,10 +85,26 @@ client.on("messageCreate", async (message) => {
       }
 
       if (!(await db.get(`log.${message.author.id}`)))
-        await db.set(`log.${message.author.id}`, []);
-      await db.push(
+        await db.set(
+          `log.${message.author.id}`,
+          brotliCompressSync(JSON.stringify([]))
+        );
+
+      /** @type {{obj: Discord.Message, url: string, confidence: number}[]} */
+      const currentLog = JSON.parse(
+        brotliDecompressSync(
+          await db.get(`log.${message.author.id}`)
+        ).toString()
+      );
+      currentLog.push({
+        obj: message,
+        url: a[1].url,
+        confidence: prob,
+      });
+
+      await db.set(
         `log.${message.author.id}`,
-        zlib.brotliCompressSync(a[1].url)
+        brotliCompressSync(JSON.stringify(currentLog))
       );
 
       logger(
@@ -180,6 +201,27 @@ client.on("interactionCreate", async (interaction) => {
           ephemeral: true,
         });
 
+      /** @type {{obj: Discord.Message, url: string, confidence: number}[]} */
+      const decompLogs = JSON.parse(brotliDecompressSync(logs).toString()),
+        filterLogs = decompLogs.map(
+          (e) => e.obj.guildId == interaction.guildId
+        ),
+        logEmbed = new Discord.EmbedBuilder()
+          .setTitle(`Logs for ${entry.obj.author.tag}`)
+          .setDescription(
+            `**${decompLogs.length}** detection logged, only displaying the **${filterLogs.length}** that belong to this server.`
+          );
+      let embeds = decompLogs.map((entry) => {
+        let newEmbed = logEmbed;
+        newEmbed
+          .addFields([
+            {
+              name: `Message ID: ${entry.obj.id}`,
+              value: `Confidence rating: **${entry.confidence}%**`,
+            },
+          ])
+          .setThumbnail(entry.url);
+      });
       break;
 
     case "support":
