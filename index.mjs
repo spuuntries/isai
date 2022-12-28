@@ -211,6 +211,7 @@ client.on("interactionCreate", async (interaction) => {
           .setDescription(
             `**${decompLogs.length}** detection logged, only displaying the **${filterLogs.length}** that belong to this server.`
           );
+
       let embeds = decompLogs.map((entry) => {
         let newEmbed = logEmbed;
         newEmbed
@@ -221,7 +222,10 @@ client.on("interactionCreate", async (interaction) => {
             },
           ])
           .setThumbnail(entry.url);
+        return newEmbed;
       });
+
+      await new Pagination(interaction.channel, embeds, "page").paginate();
       break;
 
     case "support":
@@ -253,9 +257,8 @@ client.on("interactionCreate", async (interaction) => {
           },
           {
             name: "Is there a support server?",
-            value:
-              `Here: []().\n` + // TODO: Add link, make server
-              `The bot is currently being solo-developed by kek/spuun, you can contact him at kkekkyea#4686 on Discord and kek@spuun.art.`,
+            value: `Not at the moment, but the bot is currently being solo-developed by kek/spuun."+
+            "So you can contact him at kkekkyea#4686 on Discord and kek@spuun.art.`,
             inline: true,
           },
           // TODO: A longer FAQ, website on github.io mabi
